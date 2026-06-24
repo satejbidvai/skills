@@ -1,5 +1,7 @@
 # skills
 
+[![skills.sh](https://skills.sh/b/satejbidvai/skills)](https://skills.sh/satejbidvai/skills)
+
 My personal agent skills, installable across Claude Code and other agents via [skills.sh](https://skills.sh).
 
 ## Install

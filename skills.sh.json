@@ -1,0 +1,14 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "groupings": [
+    {
+      "title": "PR Review",
+      "description": "A coupled workflow: review a PR, post findings to GitHub, then learn from comments to improve rules.",
+      "skills": [
+        "pr-review",
+        "post-pr-review",
+        "update-pr-review"
+      ]
+    }
+  ]
+}
