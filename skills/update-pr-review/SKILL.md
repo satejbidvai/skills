@@ -25,13 +25,26 @@ Analyze comments on a reviewed PR to discover patterns, corrections, or gaps in 
 
    # Review summaries (approve/request-changes bodies)
    gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews --paginate > /tmp/pr-reviews.json
+
+   # Thread resolution state (resolved/outdated) — high-signal verdicts
+   gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{isResolved isOutdated comments(first:1){nodes{databaseId}}}}}}}' -f o={owner} -f r={repo} -F n={pr_number} > /tmp/pr-threads.json
    ```
 
-   After fetching, **filter all comments to only those authored by the authenticated user**. Discard comments from other reviewers, bots, and the PR author.
+   After fetching, **thread the comments** — group every reply to its parent via `in_reply_to_id`, and attach each thread's `isResolved`/`isOutdated` state. Keep the PR author's and other people's replies; they carry the **verdict**. Only discard automated bot/CI/coverage comments. Split what remains into two sets:
+   - **My comments** — top-level comments authored by the authenticated user, each with its reply thread and resolution state. The **verdict** on a comment is read from these signals, in order of trust: (1) the author's **reply text**, (2) whether the **flagged code actually changed** (`isOutdated` is a hint that it did; confirm against the latest diff when it matters), (3) `isResolved` last. Authors routinely fix code without clicking "Resolve," so an **unresolved thread is not a rebuttal** — never infer "wrong" or "ignored" from missing resolution alone.
+   - **Others' comments** — top-level comments from other human reviewers, which teach the skill new standards.
 
 3. **Read the current `pr-review` skill's `SKILL.md`** (locate the `pr-review` skill; do not assume a fixed path).
 
-4. **Analyze every comment** looking for signals in these categories:
+4. **Audit my own comments against their verdicts.** For each of my comments, read the **verdict** (reply text first, then whether the code changed, then resolution — see step 2) and classify:
+   - **Accepted / fixed** → a "done"-style reply, or the flagged code changed. The rule (if any) behind the comment held up. No change.
+   - **Confirmed as a question** → verification comment that checked out. No change.
+   - **No reply and code unchanged** → genuinely ambiguous; don't guess. Treat as no signal rather than a rebuttal.
+   - **Rebutted** → the author defended the pattern or called the comment wrong *in a reply*. Now make the distinction that governs this whole skill: **did a rule drive the comment, or not?**
+     - A `/pr-review` rule produced it → candidate to soften (feed into category B below).
+     - No rule drove it — a reasonable one-off miss on info the reviewer couldn't see → **expected; propose nothing.** A wrong comment is only a skill defect when a wrong rule caused it.
+
+5. **Analyze others' comments** looking for signals in these categories (also absorb any rule-driven rebuttals from step 4):
 
    **A. Missing rules** — The reviewer flagged something the `/pr-review` command has no rule for.
    - Example: Reviewer says "avoid nested ternaries" but there's no rule about ternary nesting.
@@ -57,10 +70,10 @@ Analyze comments on a reviewed PR to discover patterns, corrections, or gaps in 
    - One-off situational feedback that wouldn't generalize
    - Automated bot comments (CI, linters, coverage)
 
-5. **Present findings** grouped by category (A–G above). For each finding:
+6. **Present findings** grouped by category (A–G above). For each finding:
    - Quote the relevant comment (author, file, line if available)
    - State the current rule (or lack thereof)
-   - Propose the specific change to `pr-review.md` (add / modify / remove / re-severity)
+   - Propose the specific change to the `pr-review` `SKILL.md` (add / modify / remove / re-severity)
    - Mark confidence: `high` (clear pattern, multiple signals) or `medium` (single instance but strong signal)
 
    Format:
@@ -74,16 +87,16 @@ Analyze comments on a reviewed PR to discover patterns, corrections, or gaps in 
    **Confidence**: high
    ```
 
-6. **Ask for confirmation** before making any changes. Present a numbered list of all proposed changes and ask which ones to apply. Wait for my response.
+7. **Ask for confirmation** before making any changes. Present a numbered list of all proposed changes and ask which ones to apply. Wait for my response.
 
-7. **Apply confirmed changes** to the `pr-review` skill's `SKILL.md`:
+8. **Apply confirmed changes** to the `pr-review` skill's `SKILL.md`:
    - For new rules: add them under the most appropriate existing section, or create a new section if none fits.
    - For modified rules: edit the specific bullet in place.
    - For removed rules: delete the bullet (or section if empty).
    - For severity changes: note the new severity expectation in the rule text.
    - Preserve the existing formatting, heading structure, and style.
 
-8. **Output a changelog** summarizing what was updated:
+9. **Output a changelog** summarizing what was updated:
    ```
    ## Changes applied to /pr-review
 
