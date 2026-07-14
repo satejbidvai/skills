@@ -121,7 +121,7 @@ _Assigned to the Code Quality Agent. Covers TypeScript patterns, React Query, co
 - **Use `variables` from `useMutation`** to track submitted values instead of a separate `useState`.
 - **Use `combine` with `useQueries`** when merging multiple queries.
 - **Prefer query invalidation** over optimistic updates unless there's a clear UX justification.
-- **Don't create custom query keys** when generated `queryOptions` already provide them.
+- **Don't create custom query keys or hand-write a `queryFn`** when generated `queryOptions` already provide them.
 
 ### Component Architecture
 
@@ -131,6 +131,7 @@ _Assigned to the Code Quality Agent. Covers TypeScript patterns, React Query, co
   - Can React Query handle loading/error/data states instead?
   - Can state be derived from existing data instead of synced?
 - **No boolean props to switch behavior.** Prefer enums or `mode: 'view' | 'edit'` so the pattern scales when a third option appears.
+- **Keep domain logic out of shared/common components.** Flag domain-specific branches in a component meant to be generic — push them to the caller.
 - **Make required props required.** Don't make a prop optional and pass a no-op — make it optional or split the component.
 - **Don't pass hooks as props.** Flag and question this pattern.
 - **Hooks should never be called conditionally.** This violates the Rules of Hooks.
@@ -144,6 +145,8 @@ _Assigned to the Code Quality Agent. Covers TypeScript patterns, React Query, co
 ### Use Existing Abstractions
 
 - **Before writing any utility function**, check the project's existing dependencies. These libraries cover most common needs: `es-toolkit`, `react-use`, `use-debounce`, `date-fns` / `date-fns-tz`, `fast-equals`.
+- **Prefer a schema-driven form abstraction** (react-hook-form + Zod style) over manual form state built from `useState`/`useRef` + hand-rolled validation.
+- **Single source of truth for derived values.** If the same non-trivial derivation or fallback is repeated across call sites, extract it into one helper/selector — or compute it once at the parent/data boundary and pass it down — so a site can't be missed.
 
 **Key internal abstractions:**
 
@@ -199,7 +202,6 @@ _Assigned to the Intent & UX Agent. Covers questioning intent, code hygiene, UX 
 ### Code Hygiene
 
 - **Remove `console.log`** and debug statements.
-- **Remove unused state, setters, interfaces, imports, variables.**
 - **Remove commented-out code.** Use version control, not comments, to preserve old code.
 - **Flag unnecessary re-exports.** If a module's only purpose is `export { X } from './other'` and callers could import directly, question whether the indirection layer is justified.
 - **Don't keep "will use later" code.** Dead code should be deleted.
