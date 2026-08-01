@@ -1,6 +1,5 @@
 ---
 name: update-pr-review
-description: Learn from PR comments to improve the /pr-review skill
 disable-model-invocation: true
 ---
 

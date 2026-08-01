@@ -1,6 +1,5 @@
 ---
 name: post-pr-review
-description: Post a completed /pr-review as a draft review on GitHub
 disable-model-invocation: true
 ---
 

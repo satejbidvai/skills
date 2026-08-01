@@ -1,6 +1,5 @@
 ---
 name: pr-review
-description: Review a PR using Satej's personal review standards
 disable-model-invocation: true
 ---
 
@@ -66,7 +65,7 @@ Write like a friendly senior engineer reviewing a teammate's PR. Be direct, conc
    - **Test files**: `*.test.*`, `*.spec.*`
    - **Source files**: everything else
 
-6. **Spawn review sub-agents in parallel** using the Task tool. Each sub-agent receives the Voice instructions, the intent brief, its assigned **annotated** file diffs, the shared severity/format definitions below, and only the review rules for its domain.
+6. **Spawn review sub-agents in parallel.** Each sub-agent receives the Voice instructions, the intent brief, its assigned **annotated** file diffs, the shared severity/format definitions below, and only the review rules for its domain.
    - **Code Quality Agent** — gets source file diffs + Code Quality Rules
    - **Intent & UX Agent** — gets source file diffs + Intent & UX Rules
    - **Testing Agent** — gets test file diffs + Testing Rules. **Skip entirely if no test files in the PR.**
@@ -243,13 +242,13 @@ Group findings by file path. Within each file, list findings in order of severit
 ```
 ## `web/components/example/example-component.tsx`
 
-- Line 42: Using `as Status` here — a type guard would be safer.
+- Line 42: Using `as Status` here. A type guard would be safer.
 
 - Line 18: This would read cleaner with `select` in useQuery instead of the extra `useMemo`.
 
 - nit: Line 7: Schema name should be `FormSchema`.
 
-- Question: Line 55: The progress bar got removed — intentional?
+- Question: Line 55: The progress bar got removed. Was this intentional?
 ```
 
 If a file has no findings, skip it entirely.
