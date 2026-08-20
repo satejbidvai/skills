@@ -25,6 +25,7 @@ These encode opinionated frontend (TypeScript / React / React Query) review stan
 ### Other
 
 - **how** — Explore and explain "how does X work?" questions. Produces architectural explanations with optional critique mode for identifying structural issues. Adapted from [cursor/plugins](https://github.com/cursor/plugins/tree/HEAD/pstack/skills/how).
+- **finishing-touch** — Apply finishing touches to all changes in the current branch. Auto-fix mechanical issues, tighten unnecessary code, flag judgment calls, and verify nothing was broken.
 
 ## Local development
 
