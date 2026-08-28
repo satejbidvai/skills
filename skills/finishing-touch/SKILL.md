@@ -83,6 +83,7 @@ Prompt:
 > - `[unused-import]` Unused imports.
 > - `[debug]` `console.log` / `debugger` statements.
 > - `[todo]` Implementation-scaffolding TODOs/FIXMEs where the work is complete.
+> - `[historical]` Comments that narrate a change or former implementation (`previously`, `now`, `used to`, `no longer`, `refactored`). Comments must be evergreen: state the current intent, invariant, or constraint. Remove the comment if its useful content belongs only in version control.
 > - `[whitespace]` Whitespace-only changes (merge noise).
 > - `[comment]` STE (Simplified Technical English) rewrites for poorly-worded comments. Short, active voice, explain why not what.
 > - `[markdown]` Same STE standard for `.md` / `.mdx` changes.
@@ -103,6 +104,7 @@ Prompt:
 >
 > - Line 42 [narration]: Remove comment `// Set the state to loading`
 > - Line 18 [unused-import]: `import { foo } from 'bar'`
+> - Line 70 [historical]: Rewrite `// Previously used retries` to state the current retry constraint
 > - Line 61 [comment]: Rewrite to STE: "Handles session expiry by..."
 > - Line 20 [naming]: local `data` → `orders`
 > - Line 55 [naming]: exported `StuffPanel` → `OrderFilters`
@@ -185,7 +187,7 @@ Every finding is **auto** or **ask**.
 
 **Kind defaults.** Use these first:
 
-- **auto:** `narration`, `slop`, `vocab`, `unused-import`, `debug`, `todo`, `whitespace`
+- **auto:** `narration`, `slop`, `vocab`, `unused-import`, `debug`, `todo`, `historical`, `whitespace`
 - **ask:** `missing-error`, `missing-loading`, `missing-empty`
 
 **Remaining kinds** (`comment`, `markdown`, `naming`, `copy`, `tighten`, `barrel`, `convention`):
