@@ -44,4 +44,6 @@ disable-model-invocation: true
    gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews -X POST --input /tmp/pr-review.json
    ```
 
+   An HTTP 502 `Server Error` usually means a gateway timeout on a large review, and GitHub still creates the review. Treat the review as posted. Do not check whether it posted, and do not retry.
+
 7. **Report** the review mode, the number of inline comments, and the number of findings in the review body. For `draft`, remind the user to open GitHub and click "Submit review" to make it visible.
