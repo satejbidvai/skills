@@ -7,6 +7,8 @@ Review a pull request against my review standards using specialized sub-agents t
 
 **Input**: The argument after `/pr-review` is the GitHub PR URL. Optionally, a second sentence can provide focus context (e.g., "focus on the new dialog component").
 
+**Work directory**: `{dir}` is the absolute path of your scratchpad directory (`/tmp` if you have none).
+
 **Voice** — include in every sub-agent prompt:
 
 Write like a friendly senior engineer reviewing a teammate's PR. Be direct, concise, and conversational. Say "this" not "this code block." Vary your phrasing — no two comments should sound templated. When you're unsure, express it naturally ("I think," "looks like," "not sure if this was intentional") — never use structured confidence markers. Explain "why" only when the reason isn't obvious or common knowledge — don't bloat comments with explanations everyone already knows. No praise, no emojis. One or two sentences per comment, max.
@@ -22,7 +24,7 @@ Write like a friendly senior engineer reviewing a teammate's PR. Be direct, conc
    gh pr view {pr_number} --repo {owner}/{repo} --json title,body,labels,headRefName,headRefOid
 
    # Changed files with diffs
-   gh api repos/{owner}/{repo}/pulls/{pr_number}/files --paginate --jq '.[] | {filename, status, patch}' > /tmp/pr-review-diff.json
+   gh api repos/{owner}/{repo}/pulls/{pr_number}/files --paginate --jq '.[] | {filename, status, patch}' > {dir}/pr-review-diff.json
    ```
 
    Then annotate every diff line with its real new-file line number, so sub-agents copy line numbers instead of counting from `@@` headers:
@@ -30,7 +32,7 @@ Write like a friendly senior engineer reviewing a teammate's PR. Be direct, conc
    ```bash
    python3 - <<'PY'
    import json, re
-   files = [json.loads(l) for l in open('/tmp/pr-review-diff.json') if l.strip()]
+   files = [json.loads(l) for l in open('{dir}/pr-review-diff.json') if l.strip()]
    out = []
    for f in files:
        out.append(f"### FILE: {f['filename']} ({f['status']})")
@@ -46,11 +48,11 @@ Write like a friendly senior engineer reviewing a teammate's PR. Be direct, conc
            else:                              # added/context line — prefix real new-file line number
                out.append(f"{newln:>6} {l}"); newln += 1
        out.append('')
-   open('/tmp/pr-review-annotated.txt', 'w').write('\n'.join(out))
+   open('{dir}/pr-review-annotated.txt', 'w').write('\n'.join(out))
    PY
    ```
 
-   Pass the **annotated** diffs (from `/tmp/pr-review-annotated.txt`) to sub-agents.
+   Pass the **annotated** diffs (from `{dir}/pr-review-annotated.txt`) to sub-agents.
 
 3. **Filter to web-relevant files only** — skip files outside `web/` unless the PR is explicitly about root config. Focus on `.ts`, `.tsx`, `.css`, `.mjs`, `.json` changes. Skip generated files (`*.gen.*`).
 
@@ -65,15 +67,17 @@ Write like a friendly senior engineer reviewing a teammate's PR. Be direct, conc
    - **Test files**: `*.test.*`, `*.spec.*`
    - **Source files**: everything else
 
-6. **Spawn review sub-agents in parallel.** Each sub-agent receives the Voice instructions, the intent brief, its assigned **annotated** file diffs, the shared severity/format definitions below, and only the review rules for its domain.
+   Write each group's annotated diffs to `{dir}/pr-review-src.txt` and `{dir}/pr-review-test.txt`.
+
+6. **Spawn review sub-agents in parallel.** Each sub-agent receives the Voice instructions, the intent brief, the path of its **annotated** diff file, the shared severity/format definitions below, and only the review rules for its domain.
    - **Code Quality Agent** — gets source file diffs + Code Quality Rules
    - **Intent & UX Agent** — gets source file diffs + Intent & UX Rules
    - **Testing Agent** — gets test file diffs + Testing Rules. **Skip entirely if no test files in the PR.**
    - **Architecture Agent** (`readonly: true`) — gets all file diffs + codebase access. No rules from this file — its job is to search the codebase for existing solutions, patterns, or utilities that overlap with or duplicate what the PR introduces. Flag only when the approach itself is wrong or when existing codebase utilities/patterns should be used instead.
 
    **Tool restrictions for sub-agents:**
-   - Code Quality, Intent & UX, and Testing agents must include this instruction: "All diffs you need are provided below. Do NOT use Read, Grep, or Glob tools — work exclusively from the diffs in this prompt."
-   - Architecture Agent must include this instruction: "The PR diffs are provided below for reference. You MUST search the broader codebase to find existing patterns, utilities, or solutions that overlap with what the PR introduces. Use Read, Grep, and Glob freely."
+   - Code Quality, Intent & UX, and Testing agents must include this instruction: "Read only your diff file. Do NOT use Grep or Glob — work exclusively from that diff."
+   - Architecture Agent must include this instruction: "Read the PR diffs from your diff file. You MUST search the broader codebase to find existing patterns, utilities, or solutions that overlap with what the PR introduces. Use Read, Grep, and Glob freely."
 
    Each sub-agent prompt must include:
 

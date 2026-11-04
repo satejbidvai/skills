@@ -7,6 +7,8 @@ Analyze comments on a reviewed PR to discover patterns, corrections, or gaps in 
 
 **Input**: The argument after `/update-pr-review` is the GitHub PR URL.
 
+**Work directory**: `{dir}` is the absolute path of your scratchpad directory (`/tmp` if you have none).
+
 **Steps**
 
 1. **Parse the PR URL** to extract `owner`, `repo`, and `pr_number`.
@@ -14,19 +16,19 @@ Analyze comments on a reviewed PR to discover patterns, corrections, or gaps in 
 2. **Fetch PR comments** using GitHub CLI (run all four in parallel):
    ```bash
    # Get the authenticated user's login
-   gh api user --jq '.login' > /tmp/pr-review-user.txt
+   gh api user --jq '.login' > {dir}/pr-review-user.txt
 
    # Review comments (inline on diffs)
-   gh api repos/{owner}/{repo}/pulls/{pr_number}/comments --paginate > /tmp/pr-review-comments.json
+   gh api repos/{owner}/{repo}/pulls/{pr_number}/comments --paginate > {dir}/pr-review-comments.json
 
    # Issue-level comments (top-level conversation)
-   gh api repos/{owner}/{repo}/issues/{pr_number}/comments --paginate > /tmp/pr-issue-comments.json
+   gh api repos/{owner}/{repo}/issues/{pr_number}/comments --paginate > {dir}/pr-issue-comments.json
 
    # Review summaries (approve/request-changes bodies)
-   gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews --paginate > /tmp/pr-reviews.json
+   gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews --paginate > {dir}/pr-reviews.json
 
    # Thread resolution state (resolved/outdated) — high-signal verdicts
-   gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{isResolved isOutdated comments(first:1){nodes{databaseId}}}}}}}' -f o={owner} -f r={repo} -F n={pr_number} > /tmp/pr-threads.json
+   gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){pullRequest(number:$n){reviewThreads(first:100){nodes{isResolved isOutdated comments(first:1){nodes{databaseId}}}}}}}' -f o={owner} -f r={repo} -F n={pr_number} > {dir}/pr-threads.json
    ```
 
    After fetching, **thread the comments** — group every reply to its parent via `in_reply_to_id`, and attach each thread's `isResolved`/`isOutdated` state. Keep the PR author's and other people's replies; they carry the **verdict**. Only discard automated bot/CI/coverage comments. Split what remains into two sets:

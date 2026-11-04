@@ -5,6 +5,8 @@ disable-model-invocation: true
 
 **Prerequisites**: Run `/pr-review <PR URL>` first in this conversation.
 
+**Work directory**: `{dir}` is the absolute path of your scratchpad directory (`/tmp` if you have none).
+
 **Steps**
 
 1. **Resolve the review mode** from the user's request as `draft` or `submitted`. Default to `submitted`.
@@ -24,12 +26,12 @@ disable-model-invocation: true
 
    Findings without a file heading (PR-wide comments) go into the review `body`.
 
-4. **Validate lines against the diff** — read `/tmp/pr-review-diff.json` (already written by `/pr-review`). Build a set of valid `{path, line}` pairs from the diff hunks. For each finding:
+4. **Validate lines against the diff** — read `{dir}/pr-review-diff.json` (already written by `/pr-review`). Build a set of valid `{path, line}` pairs from the diff hunks. For each finding:
    - Line is in the valid set → inline comment: `{ path, line, side: "RIGHT", body }`
    - Path exists in the PR but line is not in the diff (or was `[not-in-diff]`) → **goes into the review `body`** under the file path heading (GitHub's API does not support file-level comments on reviews)
    - No path → goes into the review `body`
 
-5. **Build the review payload** at `/tmp/pr-review.json`:
+5. **Build the review payload** at `{dir}/pr-review.json`:
    - `commit_id`: the `headSha`
    - `body`: body-level findings formatted as file path headings (`**\`path/to/file.ts\`**`) followed by the finding text. Empty (`""`) if no body-level findings.
    - `comments`: only inline comments from step 4 (never use `subject_type: "file"` — the API rejects it)
@@ -41,7 +43,7 @@ disable-model-invocation: true
 6. **Create the review**:
 
    ```bash
-   gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews -X POST --input /tmp/pr-review.json
+   gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews -X POST --input {dir}/pr-review.json
    ```
 
    An HTTP 502 `Server Error` usually means a gateway timeout on a large review, and GitHub still creates the review. Treat the review as posted. Do not check whether it posted, and do not retry.
