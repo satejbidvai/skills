@@ -197,8 +197,8 @@ _Assigned to the Intent & UX Agent. Covers questioning intent, code hygiene, UX 
 
 ### Questioning Intent
 
-- **Unrelated changes** — flag files/hunks that seem unrelated to the PR's purpose as `[question]`.
-- **Removed code** — if code, comments, or components are deleted, ask if it was intentional.
+- **Unrelated changes** — flag as `[question]` only a separate feature, fix, or refactor that belongs in its own PR. Do NOT flag small, harmless changes (formatting, reordering).
+- **Removed code** — if code, comments, or components are deleted (not moved), ask if it was intentional.
 - **Changed logic flow** — if a component's rendering _conditions_ or _data flow_ changed and it seems unrelated to the PR's purpose, ask if it was intentional. Do NOT question visual/styling changes.
 - **Templated content** — when a file is clearly derived from another adapter/domain, flag user-facing strings, variable names, or domain references that weren't updated to match the new context.
 
