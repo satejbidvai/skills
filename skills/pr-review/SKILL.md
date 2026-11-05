@@ -15,73 +15,32 @@ Write like a friendly senior engineer reviewing a teammate's PR. Be direct, conc
 
 **Steps**
 
-1. **Parse the PR URL** to extract `owner`, `repo`, and `pr_number`.
-
-2. **Fetch PR context** — run these in parallel:
+1. **Prepare the PR**:
 
    ```bash
-   # PR metadata (title, description, labels, branch, HEAD SHA)
-   gh pr view {pr_number} --repo {owner}/{repo} --json title,body,labels,headRefName,headRefOid
-
-   # Changed files with diffs
-   gh api repos/{owner}/{repo}/pulls/{pr_number}/files --paginate --jq '.[] | {filename, status, patch}' > {dir}/pr-review-diff.json
+   python3 scripts/prep.py {pr_url} --out {dir}
    ```
 
-   Then annotate every diff line with its real new-file line number, so sub-agents copy line numbers instead of counting from `@@` headers:
+   It writes the annotated source and test diffs to `{dir}/pr-review-src.txt` and `{dir}/pr-review-test.txt`. It also prints the PR context and worktree path and status needed by later steps. It skips generated and large data files and lists them. If a skipped file matters to the PR, read it in the worktree.
 
-   ```bash
-   python3 - <<'PY'
-   import json, re
-   files = [json.loads(l) for l in open('{dir}/pr-review-diff.json') if l.strip()]
-   out = []
-   for f in files:
-       out.append(f"### FILE: {f['filename']} ({f['status']})")
-       newln = None
-       for l in (f.get('patch') or '').split('\n'):
-           m = re.match(r'^@@ -\d+(?:,\d+)? \+(\d+)', l)
-           if m:
-               newln = int(m.group(1)); out.append(l); continue
-           if newln is None:
-               out.append(l); continue
-           if l.startswith('-'):              # removed line — no new-file number
-               out.append(f"      {l}")
-           else:                              # added/context line — prefix real new-file line number
-               out.append(f"{newln:>6} {l}"); newln += 1
-       out.append('')
-   open('{dir}/pr-review-annotated.txt', 'w').write('\n'.join(out))
-   PY
-   ```
-
-   Pass the **annotated** diffs (from `{dir}/pr-review-annotated.txt`) to sub-agents.
-
-3. **Filter to web-relevant files only** — skip files outside `web/` unless the PR is explicitly about root config. Focus on `.ts`, `.tsx`, `.css`, `.mjs`, `.json` changes. Skip generated files (`*.gen.*`).
-
-4. **Build an intent brief** — a short summary (3-5 sentences) of:
-   - What this PR is doing (from title, body, labels)
+2. **Build an intent brief**: a short summary (3-5 sentences) of:
+   - What this PR does (from title, body, labels)
    - Which areas of the codebase it touches
-   - Any focus context the user provided
+   - Any focus context the user gave
 
-   This brief is passed to every sub-agent so they understand the PR's purpose.
-
-5. **Classify changed files** into two groups:
-   - **Test files**: `*.test.*`, `*.spec.*`
-   - **Source files**: everything else
-
-   Write each group's annotated diffs to `{dir}/pr-review-src.txt` and `{dir}/pr-review-test.txt`.
-
-6. **Spawn review sub-agents in parallel.** Each sub-agent receives the Voice instructions, the intent brief, the path of its **annotated** diff file, the shared severity/format definitions below, and only the review rules for its domain.
-   - **Code Quality Agent** — gets source file diffs + Code Quality Rules
-   - **Intent & UX Agent** — gets source file diffs + Intent & UX Rules
-   - **Testing Agent** — gets test file diffs + Testing Rules. **Skip entirely if no test files in the PR.**
-   - **Architecture Agent** (`readonly: true`) — gets all file diffs + codebase access. No rules from this file — its job is to search the codebase for existing solutions, patterns, or utilities that overlap with or duplicate what the PR introduces. Flag only when the approach itself is wrong or when existing codebase utilities/patterns should be used instead.
+3. **Spawn review sub-agents in parallel.** If the PR changes no application source (only CI, config, scripts, or docs), skip this step and review the diff yourself with the same severity tags. Each sub-agent gets the Voice block word for word, the intent brief, the path of its diff file, the shared severity and format definitions below, and only the review rules for its domain.
+   - **Code Quality Agent**: `pr-review-src.txt` + Code Quality Rules
+   - **Intent & UX Agent**: `pr-review-src.txt` + Intent & UX Rules
+   - **Testing Agent**: `pr-review-test.txt` + Testing Rules. **Skip it if the PR has no test files.**
+   - **Architecture Agent** (`readonly: true`): both diff files + codebase access. No rules from this file. Its job is to search the codebase for existing solutions, patterns, or utilities that overlap with or duplicate what the PR adds. Flag only when the approach itself is wrong or when existing utilities or patterns should be used instead.
 
    **Tool restrictions for sub-agents:**
-   - Code Quality, Intent & UX, and Testing agents must include this instruction: "Read only your diff file. Do NOT use Grep or Glob — work exclusively from that diff."
-   - Architecture Agent must include this instruction: "Read the PR diffs from your diff file. You MUST search the broader codebase to find existing patterns, utilities, or solutions that overlap with what the PR introduces. Use Read, Grep, and Glob freely."
+   - Code Quality, Intent & UX, and Testing agents get this instruction: "Read only your diff file. Do NOT use Grep or Glob. Work only from that diff."
+   - Architecture Agent gets this instruction: "Read the PR diffs from your diff files. You MUST search the codebase in `{dir}/pr-<n>/` (the PR head) to find existing patterns, utilities, or solutions that overlap with what the PR adds. Use Read, Grep, and Glob freely. Do not search outside that folder." If step 1 skipped the worktree, tell it to search the current checkout and to remember that it is not the PR head.
 
    Each sub-agent prompt must include:
 
-   **Severity tags (internal — used by sub-agents only, removed at merge time):**
+   **Severity tags:**
    - `[blocking]` — Must fix. Bugs, incorrect patterns, violations of core conventions.
    - `[suggestion]` — Should consider. Better abstractions, cleaner patterns, architectural improvements.
    - `[nit]` — Minor. Naming, formatting, small simplifications.
@@ -91,38 +50,28 @@ Write like a friendly senior engineer reviewing a teammate's PR. Be direct, conc
    `- [severity] Line N: description`
    `N` is the number printed to the **left of the line you're flagging** in the annotated diff — copy it verbatim, do not count or compute it. If the code isn't in any diff hunk (no number on the left), use `[not-in-diff]` instead of a line number.
 
-7. **Merge findings** from all sub-agents:
-   - If two agents flagged the same code for the same underlying issue, merge into one finding with the higher severity and note both perspectives.
+   Wait for the completion notice of each sub-agent. Do not schedule wakeups or poll for results.
+
+4. **Merge and verify findings** from all sub-agents:
+   - If two agents flagged the same code for the same issue, merge them into one finding with the higher severity and keep both perspectives.
+   - Verify each `[blocking]` and `[suggestion]` finding against the code at the PR head (`{dir}/pr-<n>/`, or the diff if step 1 skipped the worktree) and, for library behavior, against its source in `node_modules`. Keep a finding that you confirmed. Drop a finding that the code disproves. If you cannot confirm a finding that still matters, post it as a question, not as `[blocking]`.
+   - Cut each comment to one or two sentences, as the Voice requires.
    - Sort by severity: blocking first, then suggestions, nits, questions.
-   - Write each finding as `{ path, line, body }`. `line` is `null` for `[not-in-diff]`. The `body` holds only the comment text: remove the severity tag and the `Line N:` prefix. Do not add a prefix or attribution (no "[Comment made with Cursor]" or similar).
+   - Write the findings to `{dir}/findings.json` as `[{"path", "line", "body"}]`. `line` is `null` for `[not-in-diff]`. Add no attribution such as "[Comment made with Cursor]."
 
-8. **Validate lines against the diff** — read `{dir}/pr-review-diff.json`. Build a set of valid `{path, line}` pairs from the diff hunks. For each finding:
-   - Line is in the valid set → inline comment: `{ path, line, side: "RIGHT", body }`
-   - Path exists in the PR but line is not in the diff (or is `null`) → **goes into the review `body`** under the file path heading
-   - No path → goes into the review `body`
+5. **Post the review**:
 
-9. **Build the review payload** at `{dir}/pr-review.json`:
-   - `commit_id`: the `headRefOid` from step 2
-   - `body`: body-level findings formatted as file path headings (`**\`path/to/file.ts\`**`) followed by the finding text. Empty (`""`) if no body-level findings.
-   - `comments`: only inline comments from step 8 (never use `subject_type: "file"` — the API rejects it)
-   - For `draft`, omit the `event` field. This creates a PENDING review.
-   - For `submitted`, set `"event": "COMMENT"`. This submits the review immediately.
+   ```bash
+   python3 scripts/post.py {pr_url} {dir}/findings.json --out {dir}
+   ```
 
-10. **Create the review**:
+   Add `--draft` for draft mode.
 
-    ```bash
-    gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews -X POST --input {dir}/pr-review.json
-    ```
-
-    An HTTP 502 `Server Error` usually means a gateway timeout on a large review, and GitHub still creates the review. Treat the review as posted. Do not check whether it posted, and do not retry.
-
-11. **Report** the review link, the review mode, the number of inline comments, and the number of findings in the review body. For `draft`, remind the user to open GitHub and click "Submit review" to make it visible.
+6. **Report** the review link, the review mode, the number of inline comments, and the number of findings in the review body. For `draft`, remind the user to open GitHub and click "Submit review" to make it visible.
 
 ---
 
 ## Code Quality Rules
-
-_Assigned to the Code Quality Agent. Covers TypeScript patterns, React Query, component design, and codebase conventions._
 
 ### TypeScript Strictness
 
@@ -151,7 +100,7 @@ _Assigned to the Code Quality Agent. Covers TypeScript patterns, React Query, co
   - Can state be derived from existing data instead of synced?
 - **No boolean props to switch behavior.** Prefer enums or `mode: 'view' | 'edit'` so the pattern scales when a third option appears.
 - **Keep domain logic out of shared/common components.** Flag domain-specific branches in a component meant to be generic — push them to the caller.
-- **Make required props required.** Don't make a prop optional and pass a no-op — make it optional or split the component.
+- **Make required props required.** If every caller needs a callback, require it instead of accepting a no-op. If the behavior is optional, omit the no-op or split the component.
 - **Don't pass hooks as props.** Flag and question this pattern.
 - **Hooks should never be called conditionally.** This violates the Rules of Hooks.
 
@@ -163,14 +112,13 @@ _Assigned to the Code Quality Agent. Covers TypeScript patterns, React Query, co
 
 ### Use Existing Abstractions
 
-- **Before writing any utility function**, check the project's existing dependencies. These libraries cover most common needs: `es-toolkit`, `react-use`, `use-debounce`, `date-fns` / `date-fns-tz`, `fast-equals`.
+- **Before writing any utility function**, check the codebase helpers and existing dependencies, and flag reinventions. These libraries cover most common needs: `es-toolkit`, `react-use`, `use-debounce`, `date-fns` / `date-fns-tz`, `fast-equals`.
 - **Prefer a schema-driven form abstraction** (react-hook-form + Zod style) over manual form state built from `useState`/`useRef` + hand-rolled validation.
 - **Single source of truth for derived values.** If the same non-trivial derivation or fallback is repeated across call sites, extract it into one helper/selector — or compute it once at the parent/data boundary and pass it down — so a site can't be missed.
 
 **Key internal abstractions:**
 
 - **Domain form fields** (`InputField`, `RichTextEditorField`, `CheckboxField`, etc. from `@/components/form-field/`) — not raw Radix inputs inside `FormField`.
-- Flag any case where existing codebase helpers or dependencies are being reinvented.
 
 ### Naming Conventions
 
@@ -184,7 +132,7 @@ _Assigned to the Code Quality Agent. Covers TypeScript patterns, React Query, co
 
 ### Static Values Outside Render
 
-- **Move constant arrays, objects, regex, and templates outside components/functions** if they don't depend on props/state. They get recreated on every render otherwise.
+- **Move constant arrays, objects, regex, and templates outside components/functions** if they don't depend on props/state.
 - Flag `useMemo` wrapping static data that should just be a module-level constant.
 
 ### React Query State Semantics
@@ -208,8 +156,6 @@ _Assigned to the Code Quality Agent. Covers TypeScript patterns, React Query, co
 ---
 
 ## Intent & UX Rules
-
-_Assigned to the Intent & UX Agent. Covers questioning intent, code hygiene, UX patterns, and URL state._
 
 ### Questioning Intent
 
@@ -243,8 +189,6 @@ _Assigned to the Intent & UX Agent. Covers questioning intent, code hygiene, UX 
 ---
 
 ## Testing Rules
-
-_Assigned to the Testing Agent. Only used when the PR contains test files (`*.test.*`, `*.spec.*`)._
 
 - **Never mock components.** Tests should render real components.
 - **Never mock helper functions.** Let the real implementation run.
