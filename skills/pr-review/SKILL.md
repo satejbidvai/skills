@@ -3,9 +3,9 @@ name: pr-review
 disable-model-invocation: true
 ---
 
-Review a pull request against my review standards using specialized sub-agents that run in parallel, then merge and deduplicate findings.
+Review a pull request against my review standards using specialized sub-agents that run in parallel, merge and deduplicate findings, then post them as a GitHub review.
 
-**Input**: The argument after `/pr-review` is the GitHub PR URL. Optionally, a second sentence can provide focus context (e.g., "focus on the new dialog component").
+**Input**: The argument after `/pr-review` is the GitHub PR URL. Optionally, a second sentence can provide focus context (e.g., "focus on the new dialog component") or the review mode (`draft` or `submitted`, default `submitted`).
 
 **Work directory**: `{dir}` is the absolute path of your scratchpad directory (`/tmp` if you have none).
 
@@ -81,7 +81,7 @@ Write like a friendly senior engineer reviewing a teammate's PR. Be direct, conc
 
    Each sub-agent prompt must include:
 
-   **Severity tags (internal — used by sub-agents only, translated at merge time):**
+   **Severity tags (internal — used by sub-agents only, removed at merge time):**
    - `[blocking]` — Must fix. Bugs, incorrect patterns, violations of core conventions.
    - `[suggestion]` — Should consider. Better abstractions, cleaner patterns, architectural improvements.
    - `[nit]` — Minor. Naming, formatting, small simplifications.
@@ -94,13 +94,29 @@ Write like a friendly senior engineer reviewing a teammate's PR. Be direct, conc
 7. **Merge findings** from all sub-agents:
    - If two agents flagged the same code for the same underlying issue, merge into one finding with the higher severity and note both perspectives.
    - Sort by severity: blocking first, then suggestions, nits, questions.
-   - **Translate severity tags to final format:** strip the `[blocking]` and `[suggestion]` prefixes entirely (no prefix in output). Convert `[nit]` to `nit:` and `[question]` to `Question:`.
+   - Write each finding as `{ path, line, body }`. `line` is `null` for `[not-in-diff]`. The `body` holds only the comment text: remove the severity tag and the `Line N:` prefix. Do not add a prefix or attribution (no "[Comment made with Cursor]" or similar).
 
-8. **Output the review** in the format specified at the bottom. Prepend a metadata header as the very first line of the review output (before any findings):
-   ```
-   <!-- pr:{owner}/{repo}/{pr_number} sha:{headSha} -->
-   ```
-   This is invisible in chat and used by `/post-pr-review` to extract PR metadata.
+8. **Validate lines against the diff** — read `{dir}/pr-review-diff.json`. Build a set of valid `{path, line}` pairs from the diff hunks. For each finding:
+   - Line is in the valid set → inline comment: `{ path, line, side: "RIGHT", body }`
+   - Path exists in the PR but line is not in the diff (or is `null`) → **goes into the review `body`** under the file path heading
+   - No path → goes into the review `body`
+
+9. **Build the review payload** at `{dir}/pr-review.json`:
+   - `commit_id`: the `headRefOid` from step 2
+   - `body`: body-level findings formatted as file path headings (`**\`path/to/file.ts\`**`) followed by the finding text. Empty (`""`) if no body-level findings.
+   - `comments`: only inline comments from step 8 (never use `subject_type: "file"` — the API rejects it)
+   - For `draft`, omit the `event` field. This creates a PENDING review.
+   - For `submitted`, set `"event": "COMMENT"`. This submits the review immediately.
+
+10. **Create the review**:
+
+    ```bash
+    gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews -X POST --input {dir}/pr-review.json
+    ```
+
+    An HTTP 502 `Server Error` usually means a gateway timeout on a large review, and GitHub still creates the review. Treat the review as posted. Do not check whether it posted, and do not retry.
+
+11. **Report** the review link, the review mode, the number of inline comments, and the number of findings in the review body. For `draft`, remind the user to open GitHub and click "Submit review" to make it visible.
 
 ---
 
@@ -236,23 +252,3 @@ _Assigned to the Testing Agent. Only used when the PR contains test files (`*.te
 - **No manual timeouts** (`setTimeout`, hardcoded delays) in tests. Use `expect.poll`, `waitFor`, or Vitest's async utilities.
 - **Prefer `userEvent.type`** over `fireEvent.change` for typing interactions.
 - **No mocking `useRouter`, `useParams`** unless verified as the recommended approach.
-
----
-
-## Output Format
-
-Group findings by file path. Within each file, list findings in order of severity (blocking first, then suggestions, nits, questions). Use this format:
-
-```
-## `web/components/example/example-component.tsx`
-
-- Line 42: Using `as Status` here. A type guard would be safer.
-
-- Line 18: This would read cleaner with `select` in useQuery instead of the extra `useMemo`.
-
-- nit: Line 7: Schema name should be `FormSchema`.
-
-- Question: Line 55: The progress bar got removed. Was this intentional?
-```
-
-If a file has no findings, skip it entirely.

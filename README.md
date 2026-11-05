@@ -16,8 +16,7 @@ All skills are user-invoked only (`disable-model-invocation: true`).
 
 ### PR review workflow
 
-- **pr-review** — Review a PR against my personal review standards using parallel sub-agents, then merge and deduplicate findings.
-- **post-pr-review** — Post a completed `/pr-review` as a draft (PENDING) review on GitHub.
+- **pr-review** — Review a PR against my personal review standards using parallel sub-agents, merge and deduplicate findings, then post them as a GitHub review.
 - **update-pr-review** — Learn from PR comments to discover gaps in the `pr-review` rules and propose targeted updates.
 
 These encode opinionated frontend (TypeScript / React / React Query) review standards. Read each `SKILL.md` and adapt it to your own stack.
