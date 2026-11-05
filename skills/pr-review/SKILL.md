@@ -28,11 +28,11 @@ Write like a friendly senior engineer reviewing a teammate's PR. Be direct, conc
    - Which areas of the codebase it touches
    - Any focus context the user gave
 
-3. **Spawn review sub-agents in parallel.** If the PR changes no application source (only CI, config, scripts, or docs), skip this step and review the diff yourself with the same severity tags. Each sub-agent gets the Voice block word for word, the intent brief, the path of its diff file, the shared severity and format definitions below, and only the review rules for its domain.
+3. **Spawn review sub-agents in parallel.** If the PR changes no application source (only CI, config, scripts, or docs), skip this step and review the diff yourself with the same severity tags. Test files count as application source. Each sub-agent gets the Voice block word for word, the intent brief, the path of its diff file, the shared severity and format definitions below, and only the review rules for its domain.
    - **Code Quality Agent**: `pr-review-src.txt` + Code Quality Rules
    - **Intent & UX Agent**: `pr-review-src.txt` + Intent & UX Rules
    - **Testing Agent**: `pr-review-test.txt` + Testing Rules. **Skip it if the PR has no test files.**
-   - **Architecture Agent** (`readonly: true`): both diff files + codebase access. No rules from this file. Its job is to search the codebase for existing solutions, patterns, or utilities that overlap with or duplicate what the PR adds. Flag only when the approach itself is wrong or when existing utilities or patterns should be used instead.
+   - **Architecture Agent** (read-only sub-agent: `Explore` type in Claude Code, `readonly: true` in Cursor): both diff files + codebase access. No rules from this file. Its job is to search the codebase for existing solutions, patterns, or utilities that overlap with or duplicate what the PR adds. Flag only when the approach itself is wrong or when existing utilities or patterns should be used instead.
 
    **Tool restrictions for sub-agents:**
    - Code Quality, Intent & UX, and Testing agents get this instruction: "Read only your diff file. Do NOT use Grep or Glob. Work only from that diff."

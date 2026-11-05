@@ -9,7 +9,7 @@ Writes to --out:
 
 In the annotated diffs, each added or context line starts with its new-file line number.
 Removed lines have no number. GitHub patches are authoritative; a local diff fills only missing patches.
-Generated files (lockfiles, *.gen.*, *.min.*, *.map, *.snap) and JSON files with over 400 changed lines are skipped.
+Generated files (lockfiles, *.gen.*, *.generated.*, *.min.*, *.map, *.snap) and JSON files with over 400 changed lines are skipped.
 Prints the PR header, the file split, the skipped files, and the PR body.
 """
 
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -27,7 +28,7 @@ from common import HUNK, diff_lines, die, gh, parse_pr_url, run
 
 TEST_FILE = re.compile(r"\.(test|spec)\.[cm]?[jt]sx?$")
 GENERATED = re.compile(
-    r"(^|/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?)$|\.(gen|min)\.|\.(map|snap)$"
+    r"(^|/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?)$|\.(gen|generated|min)\.|\.(map|snap)$"
 )
 LARGE_DATA_LINES = 400
 
@@ -65,14 +66,36 @@ def annotate(file: dict) -> str:
     return "\n".join(out) + "\n"
 
 
-def find_remote(repo: str) -> tuple[str, str] | None:
-    """Return (repo root, remote name) when the current directory is a checkout of `repo`."""
-    root = run(["git", "rev-parse", "--show-toplevel"])
+def ancestor_dirs(limit: int = 6) -> list[str]:
+    """Working directories of the parent processes, nearest first."""
+    dirs = []
+    pid = os.getppid()
+    for _ in range(limit):
+        if pid <= 1:
+            break
+        proc = Path(f"/proc/{pid}")
+        if proc.exists():
+            cwd = str(proc.joinpath("cwd").resolve())
+            ppid = proc.joinpath("stat").read_text().rsplit(")", 1)[1].split()[1]
+        else:
+            cwd = next((l[1:] for l in run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"]).stdout.splitlines() if l.startswith("n")), "")
+            ppid = run(["ps", "-o", "ppid=", "-p", str(pid)]).stdout.strip()
+        if cwd and cwd not in dirs:
+            dirs.append(cwd)
+        if not ppid.isdigit():
+            break
+        pid = int(ppid)
+    return dirs
+
+
+def find_remote(repo: str, repo_dir: str) -> tuple[str, str] | None:
+    """Return (repo root, remote name) when `repo_dir` is a checkout of `repo`."""
+    root = run(["git", "rev-parse", "--show-toplevel"], cwd=repo_dir)
     if root.returncode != 0:
         return None
     pattern = re.compile(rf"github\.com[:/]{re.escape(repo)}(\.git)?/?$", re.I)
-    for name in run(["git", "remote"]).stdout.split():
-        if pattern.search(run(["git", "remote", "get-url", name]).stdout.strip()):
+    for name in run(["git", "remote"], cwd=repo_dir).stdout.split():
+        if pattern.search(run(["git", "remote", "get-url", name], cwd=repo_dir).stdout.strip()):
             return root.stdout.strip(), name
     return None
 
@@ -131,10 +154,10 @@ def local_files(root: str, base: str, head: str, paths: list[str]) -> list[dict]
 
 
 def make_worktree(
-    found: tuple[str, str] | None, repo: str, number: int, head_sha: str, out: Path,
+    found: tuple[str, str] | None, repo_dir: str, repo: str, number: int, head_sha: str, out: Path,
 ) -> tuple[str | None, str]:
     if not found:
-        return None, f"worktree: skipped (current directory is not a checkout of {repo}); using GitHub file patches"
+        return None, f"worktree: skipped ({repo_dir} is not a checkout of {repo}); using GitHub file patches"
     root, remote = found
     worktree = out / f"pr-{number}"
     run(["git", "worktree", "prune"], cwd=root)
@@ -184,6 +207,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("url", help="GitHub PR URL")
     parser.add_argument("--out", required=True, help="work directory")
+    parser.add_argument("--repo-dir", help="local checkout of the PR's repo (default: current directory, then the parent processes' directories)")
     args = parser.parse_args()
 
     repo, number = parse_pr_url(args.url)
@@ -203,8 +227,15 @@ def main() -> None:
         ]).split("\n")
         if line.strip()
     ]
-    found = find_remote(repo)
-    worktree, worktree_line = make_worktree(found, repo, number, head_sha, out)
+    # Agents often `cd` into the skill folder to run this. The harness that started the shell still runs in the repo.
+    candidates = [args.repo_dir] if args.repo_dir else [os.getcwd(), *ancestor_dirs()]
+    repo_dir, found = os.getcwd(), None
+    for candidate in filter(None, candidates):
+        found = find_remote(repo, str(Path(candidate).resolve()))
+        if found:
+            repo_dir = candidate
+            break
+    worktree, worktree_line = make_worktree(found, repo_dir, repo, number, head_sha, out)
     local, base_ref = [], None
     missing = [
         file["path"]
